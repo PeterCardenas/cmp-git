@@ -3,6 +3,7 @@ local gitlab = require("cmp_git.sources.gitlab")
 local git = require("cmp_git.sources.git")
 local utils = require("cmp_git.utils")
 
+---@class cmp_git.Source
 local Source = {
     ---@type cmp_git.Config
     ---@diagnostic disable-next-line: missing-fields

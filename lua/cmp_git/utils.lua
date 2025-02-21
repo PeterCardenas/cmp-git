@@ -199,7 +199,7 @@ function M.get_git_info(remotes, opts)
 end
 
 function M.get_cwd()
-    if vim.fn.getreg("%") ~= "" and vim.bo.filetype ~= "octo" then
+    if vim.fn.getreg("%") ~= "" and vim.bo.filetype ~= "octo" and vim.bo.buftype ~= "terminal" then
         return vim.fn.expand("%:p:h")
     end
     return vim.fn.getcwd()
