@@ -74,7 +74,13 @@ function Source:_complete(params, callback)
         on_complete = function(git_info)
             for _, trigger in pairs(self.trigger_actions) do
                 if trigger.trigger_character == trigger_character then
-                    if trigger.action(self.sources, trigger_character, callback, params, git_info) then
+                    local will_complete = trigger.action(self.sources, trigger_character, function(list)
+                        for _, item in ipairs(list.items) do
+                            item.data.trigger_name = trigger.debug_name
+                        end
+                        callback(list)
+                    end, params, git_info)
+                    if will_complete then
                         break
                     end
                 end
@@ -93,6 +99,26 @@ function Source:complete(params, callback)
         end
         self:_complete(params, callback)
     end)
+end
+
+---@param item cmp_git.CompletionItem
+---@param callback fun(item: cmp_git.CompletionItem)
+function Source:resolve(item, callback)
+    utils.get_git_info(self.config.remotes, {
+        enableRemoteUrlRewrites = self.config.enableRemoteUrlRewrites,
+        ssh_aliases = self.config.ssh_aliases,
+        on_complete = function(git_info)
+            for _, trigger in ipairs(self.trigger_actions) do
+                if item.data.trigger_name == trigger.debug_name then
+                    if trigger.resolve ~= nil then
+                        trigger.resolve(self.sources, item, callback, git_info)
+                        return
+                    end
+                end
+            end
+            callback(item)
+        end,
+    })
 end
 
 function Source:get_keyword_pattern()

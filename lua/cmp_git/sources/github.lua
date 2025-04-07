@@ -488,4 +488,59 @@ function GitHub:get_mentions(callback, git_info, trigger_char)
     return true
 end
 
+---@class cmp_git.GitHub.User
+---@field login string
+---@field name string?
+---@field company string?
+---@field email string?
+---@field bio string?
+---@field location string?
+
+---@param item cmp_git.CompletionItem
+---@param callback fun(item: cmp_git.CompletionItem): nil
+---@param git_info cmp_git.GitInfo
+function GitHub:resolve_mention(item, callback, git_info)
+    local mention_data = item.data ---@type cmp_git.GitHub.Mention
+    fetch_data(
+        function(result, success)
+            if not success then
+                callback(item)
+                return
+            end
+            ---@type boolean, cmp_git.GitHub.User
+            local ok, parsed = pcall(vim.json.decode, result)
+            if not ok then
+                callback(item)
+                return
+            end
+            local new_item = vim.deepcopy(item)
+            local doc = ""
+            if parsed.name ~= vim.NIL then
+                doc = doc .. string.format("# %s (%s)\n", parsed.name, parsed.login)
+            else
+                doc = doc .. string.format("# %s\n", parsed.login)
+            end
+            if parsed.location ~= vim.NIL then
+                doc = doc .. string.format("Location: %s\n", parsed.location)
+            end
+            if parsed.email ~= vim.NIL then
+                doc = doc .. string.format("Email: %s\n", parsed.email)
+            end
+            if parsed.company ~= vim.NIL then
+                doc = doc .. string.format("Company: %s\n", parsed.company)
+            end
+            if parsed.bio ~= vim.NIL then
+                doc = doc .. string.format("Bio: %s\n", parsed.bio)
+            end
+            new_item.documentation = {
+                kind = "markdown",
+                value = doc,
+            }
+            callback(new_item)
+        end,
+        { "api", string.format("/users/%s", mention_data.login), "--hostname", git_info.host },
+        github_url(git_info.host, string.format("/users/%s", mention_data.login))
+    )
+end
+
 return GitHub

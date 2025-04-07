@@ -1,10 +1,12 @@
 local format = require("cmp_git.format")
 local sort = require("cmp_git.sort")
 
+---@module 'cmp'
 ---@class cmp_git.Config.TriggerAction
 ---@field debug_name string
 ---@field trigger_character string
 ---@field action fun(sources: cmp_git.Sources, trigger_char: string, callback: fun(list: cmp_git.CompletionList), params: cmp.SourceCompletionApiParams, git_info: cmp_git.GitInfo): boolean
+---@field resolve? fun(sources: cmp_git.Sources, item: cmp_git.CompletionItem, callback: fun(item: cmp_git.CompletionItem), git_info: cmp_git.GitInfo)
 
 ---@class cmp_git.Config
 local M = {
@@ -128,6 +130,9 @@ local M = {
             trigger_character = "@",
             action = function(sources, trigger_char, callback, params, git_info)
                 return sources.github:get_mentions(callback, git_info, trigger_char)
+            end,
+            resolve = function(sources, item, callback, git_info)
+                return sources.github:resolve_mention(item, callback, git_info)
             end,
         },
     },
