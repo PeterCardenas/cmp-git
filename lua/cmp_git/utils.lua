@@ -105,7 +105,7 @@ end
 ---@return nil
 function M.get_git_info(remotes, opts)
     opts = opts or {}
-    local cwd = M.get_cwd() ---@type string?
+    local cwd = M.get_cwd()
 
     local get_git_info ---@type fun(): nil
 
@@ -199,10 +199,18 @@ function M.get_git_info(remotes, opts)
 end
 
 function M.get_cwd()
+    local cwd ---@type string?
     if vim.fn.getreg("%") ~= "" and vim.bo.filetype ~= "octo" and vim.bo.buftype ~= "terminal" then
-        return vim.fn.expand("%:p:h")
+        cwd = vim.fn.expand("%:p:h")
+        if vim.fn.isdirectory(cwd) == 1 then
+            return cwd
+        end
     end
-    return vim.fn.getcwd()
+    cwd = vim.fn.getcwd()
+    if vim.fn.isdirectory(cwd) == 1 then
+        return cwd
+    end
+    return nil
 end
 
 ---@param exec string
