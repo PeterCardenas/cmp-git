@@ -12,7 +12,8 @@ local GitHub = {
     cache = {
         ---@type table<integer, cmp_git.CompletionItem[]>
         issues = {},
-        ---@type table<integer, cmp_git.AsyncItemList>
+        ---Maps hash of GitInfo to mentions item list
+        ---@type table<string, cmp_git.AsyncItemList>
         mentions = {},
         ---@type table<integer, cmp_git.CompletionItem[]>
         pull_requests = {},
@@ -235,17 +236,21 @@ local function use_gh_default_repo_if_set(git_info)
     return git_info
 end
 
+---@class cmp_git.ValidGitInfo : cmp_git.GitInfo
+---@field host string
+---@field owner string
+---@field repo string
+
 ---@param git_info cmp_git.GitInfo
+---@return cmp_git.ValidGitInfo?
 function GitHub:is_valid_host(git_info)
-    if
-        git_info.host == nil
-        or git_info.owner == nil
-        or git_info.repo == nil
-        or not vim.tbl_contains(GitHub.config.hosts, git_info.host)
-    then
-        return false
+    local host = git_info.host
+    local owner = git_info.owner
+    local repo = git_info.repo
+    if host == nil or owner == nil or repo == nil or not vim.tbl_contains(GitHub.config.hosts, host) then
+        return nil
     end
-    return true
+    return { host = host, owner = owner, repo = repo }
 end
 
 ---@param callback fun(list: cmp_git.CompletionList)
@@ -378,20 +383,26 @@ end
 ---@class cmp_git.GitHub.Mention
 ---@field login string
 
+---@param git_info cmp_git.ValidGitInfo
+---@return string
+local function hash_git_info(git_info)
+    return string.format("%s/%s/%s", git_info.host, git_info.owner, git_info.repo)
+end
+
 ---@param callback fun(list: cmp_git.CompletionList): nil
----@param git_info cmp_git.GitInfo
+---@param git_info cmp_git.ValidGitInfo
 ---@param trigger_char string
 ---@param member_type 'collaborators' | 'contributors'
 function GitHub:_get_mentions(callback, git_info, trigger_char, member_type)
     local config = self.config.mentions
-    local bufnr = vim.api.nvim_get_current_buf()
+    local git_info_hash = hash_git_info(git_info)
 
     ---@param page integer
     local function fetch_mentions(page)
-        local page_size = math.min(config.limit - #self.cache.mentions[bufnr].items, 100)
+        local page_size = math.min(config.limit - #self.cache.mentions[git_info_hash].items, 100)
         local job = get_items(
             function(args)
-                local mentionsCache = self.cache.mentions[bufnr]
+                local mentionsCache = self.cache.mentions[git_info_hash]
                 vim.list_extend(mentionsCache.items, args.items)
                 -- Go until there are no more items or we've reached the limit
                 mentionsCache.in_progress = #args.items ~= 0 and #mentionsCache.items < config.limit
@@ -447,20 +458,21 @@ end
 ---@param trigger_char string
 ---@return boolean
 function GitHub:get_mentions(callback, git_info, trigger_char)
-    if not GitHub:is_valid_host(git_info) then
+    local valid_git_info = GitHub:is_valid_host(git_info)
+    if valid_git_info == nil then
         return false
     end
 
-    local bufnr = vim.api.nvim_get_current_buf()
+    local git_info_hash = hash_git_info(valid_git_info)
 
-    if self.cache.mentions[bufnr] then
-        local mentionsCache = self.cache.mentions[bufnr]
+    if self.cache.mentions[git_info_hash] then
+        local mentionsCache = self.cache.mentions[git_info_hash]
         -- Immediately return in progress results to prevent multiple concurrent requests
         callback({ items = mentionsCache.items, isIncomplete = mentionsCache.in_progress })
         return true
     end
 
-    self.cache.mentions[bufnr] = { items = {}, in_progress = true }
+    self.cache.mentions[git_info_hash] = { items = {}, in_progress = true }
     fetch_data(
         function(result)
             local ok, parsed = pcall(vim.json.decode, result)
@@ -470,7 +482,7 @@ function GitHub:get_mentions(callback, git_info, trigger_char)
                 -- Note that "404" is considered a success, since the dummy user likely doesn't exist
                 member_type = (parsed.status ~= "403" and parsed.status ~= "401") and "collaborators" or "contributors"
             end
-            self:_get_mentions(callback, git_info, trigger_char, member_type)
+            self:_get_mentions(callback, valid_git_info, trigger_char, member_type)
         end,
         {
             "api",
