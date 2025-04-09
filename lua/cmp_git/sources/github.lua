@@ -555,4 +555,11 @@ function GitHub:resolve_mention(item, callback, git_info)
     )
 end
 
+---@param git_info cmp_git.GitInfo
+function GitHub:maybe_prefetch(git_info)
+    if self.config.mentions.prefetch then
+        self:get_mentions(function() end, git_info, "")
+    end
+end
+
 return GitHub

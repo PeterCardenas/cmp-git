@@ -54,6 +54,7 @@ local M = {
             limit = 100,
             sort_by = sort.github.mentions,
             format = format.github.mentions,
+            prefetch = false,
         },
         ---@class cmp_git.Config.GitHub.PullRequest
         pull_requests = {

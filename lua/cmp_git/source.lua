@@ -44,6 +44,14 @@ function Source.new(overrides)
         end
     end
 
+    utils.get_git_info(self.config.remotes, {
+        enableRemoteUrlRewrites = self.config.enableRemoteUrlRewrites,
+        ssh_aliases = self.config.ssh_aliases,
+        on_complete = function(git_info)
+            self.sources.github:maybe_prefetch(git_info)
+        end,
+    })
+
     self.trigger_characters_str = table.concat(self.trigger_characters, "")
     self.keyword_pattern = string.format("[%s]\\S*", self.trigger_characters_str)
 
