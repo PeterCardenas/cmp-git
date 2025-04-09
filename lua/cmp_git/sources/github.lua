@@ -383,10 +383,60 @@ end
 ---@class cmp_git.GitHub.Mention
 ---@field login string
 
+---Reference: https://docs.github.com/en/rest/teams/teams?apiVersion=2022-11-28#list-teams
+---@class cmp_git.GitHub.Team
+---@field name string
+---@field description string
+
+---@class cmp_git.GitHub.TeamWithOrg : cmp_git.GitHub.Team
+---@field organization string
+
 ---@param git_info cmp_git.ValidGitInfo
 ---@return string
 local function hash_git_info(git_info)
     return string.format("%s/%s/%s", git_info.host, git_info.owner, git_info.repo)
+end
+
+function GitHub:_get_teams(callback, git_info, trigger_char)
+    local config = self.config.mentions
+    local git_info_hash = hash_git_info(git_info)
+    ---@param page integer
+    local function fetch_teams(page)
+        local page_size = math.min(config.limit - #self.cache.mentions[git_info_hash].items, 100)
+        get_items(
+            function(args)
+                local mentionsCache = self.cache.mentions[git_info_hash]
+                vim.list_extend(mentionsCache.items, args.items)
+                mentionsCache.in_progress = #args.items ~= 0 and #mentionsCache.items < config.limit
+                callback({ items = mentionsCache.items, isIncomplete = mentionsCache.in_progress })
+                if mentionsCache.in_progress then
+                    fetch_teams(page + 1)
+                end
+            end,
+            {
+                "api",
+                string.format("orgs/%s/teams?per_page=%d&page=%d", git_info.owner, page_size, page),
+                "--hostname",
+                git_info.host,
+            },
+            github_url(
+                git_info.host,
+                string.format("orgs/%s/teams?per_page=%d&page=%d", git_info.owner, page_size, page)
+            ),
+            ---@param team cmp_git.GitHub.Team
+            function(team)
+                ---@type cmp_git.GitHub.TeamWithOrg
+                local team_with_org = {
+                    name = team.name,
+                    organization = git_info.owner,
+                    description = team.description,
+                }
+                return format.item(config, trigger_char, team_with_org)
+            end
+        ):start()
+    end
+
+    fetch_teams(1)
 end
 
 ---@param callback fun(list: cmp_git.CompletionList): nil
@@ -405,12 +455,16 @@ function GitHub:_get_mentions(callback, git_info, trigger_char, member_type)
                 local mentionsCache = self.cache.mentions[git_info_hash]
                 vim.list_extend(mentionsCache.items, args.items)
                 -- Go until there are no more items or we've reached the limit
-                mentionsCache.in_progress = #args.items ~= 0 and #mentionsCache.items < config.limit
-                if mentionsCache.in_progress then
-                    fetch_mentions(page + 1)
-                end
+                local should_fetch_mentions = #args.items ~= 0 and #mentionsCache.items < config.limit
+                local should_fetch_teams = config.fetch_teams and member_type == "collaborators"
+                mentionsCache.in_progress = should_fetch_mentions or should_fetch_teams
                 -- Do not wait for all pages to be fetched to give back results
                 callback({ items = mentionsCache.items, isIncomplete = mentionsCache.in_progress })
+                if should_fetch_mentions then
+                    fetch_mentions(page + 1)
+                elseif should_fetch_teams then
+                    self:_get_teams(callback, git_info, trigger_char)
+                end
             end,
             {
                 "api",
@@ -512,7 +566,16 @@ end
 ---@param callback fun(item: cmp_git.CompletionItem): nil
 ---@param git_info cmp_git.GitInfo
 function GitHub:resolve_mention(item, callback, git_info)
-    local mention_data = item.data ---@type cmp_git.GitHub.Mention
+    local team_or_mention = item.data ---@type cmp_git.GitHub.Mention|cmp_git.GitHub.TeamWithOrg
+    -- Teams don't need more information
+    if team_or_mention.organization then
+        callback(item)
+        return
+    end
+    ---@type cmp_git.GitHub.Mention
+    ---@diagnostic disable-next-line: assign-type-mismatch
+    local mention_data = team_or_mention
+
     fetch_data(
         function(result, success)
             if not success then

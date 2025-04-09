@@ -55,22 +55,41 @@ local M = {
                 }
             end,
         },
-        ---@type cmp_git.FormatConfig<cmp_git.GitHub.Mention>
+        ---@type cmp_git.FormatConfig<cmp_git.GitHub.Mention|cmp_git.GitHub.TeamWithOrg>
         mentions = {
             label = function(trigger_char, mention)
-                return string.format("@%s", mention.login)
+                if mention.login then
+                    return string.format("@%s", mention.login)
+                else
+                    return string.format("@%s/%s", mention.organization, mention.name)
+                end
             end,
             insertText = function(trigger_char, mention)
-                return string.format("@%s", mention.login)
+                if mention.login then
+                    return string.format("@%s", mention.login)
+                else
+                    return string.format("@%s/%s", mention.organization, mention.name)
+                end
             end,
             filterText = function(trigger_char, mention)
-                return string.format("@%s", mention.login)
+                if mention.login then
+                    return string.format("@%s", mention.login)
+                else
+                    return string.format("@%s/%s", mention.organization, mention.name)
+                end
             end,
             documentation = function(trigger_char, mention)
-                return {
-                    kind = "markdown",
-                    value = string.format("# %s", mention.login),
-                }
+                if mention.login then
+                    return {
+                        kind = "markdown",
+                        value = string.format("# %s", mention.login),
+                    }
+                else
+                    return {
+                        kind = "markdown",
+                        value = string.format("# %s\n%s", mention.name, mention.description),
+                    }
+                end
             end,
         },
         ---@type cmp_git.FormatConfig<cmp_git.GitHub.PullRequest>
