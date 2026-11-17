@@ -18,6 +18,14 @@ local M = {}
 ---@class cmp_git.GitHub.Mention
 ---@field login string
 
+---A team of the organization that owns the repository, from the teams API. It has no `login`.
+---Reference: https://docs.github.com/en/rest/teams/teams#list-teams
+---@class cmp_git.GitHub.Team
+---@field name string
+---@field slug string The handle of the team in `@org/slug`.
+---@field organization string
+---@field description string
+
 local function github_url(git_host, path)
     if git_host == "github.com" then
         return string.format("https://api.github.com/%s", path)
@@ -254,6 +262,34 @@ function M.mentions_request(git_info, trigger_char, config, opts)
                 return parsed["mentionableUsers"]
             end
             return parsed
+        end,
+    }
+end
+
+---The teams of the organization after its users. Only a collaborator can list them, so they follow the collaborators
+---and not the contributors.
+function M.mentions_extra_request(git_info, trigger_char, config, opts)
+    local member_type = opts.context and opts.context.member_type
+    if not config.fetch_teams or member_type ~= "collaborators" then
+        return nil
+    end
+
+    local path = string.format("orgs/%s/teams?per_page=%d&page=%d", git_info.owner, opts.page_size, opts.page)
+    return {
+        commands = {
+            { exec = "gh", args = { "api", path, "--hostname", git_info.host }, env = env() },
+            curl_command(github_url(git_info.host, path)),
+        },
+        handle_item = function(team)
+            ---@type cmp_git.GitHub.Team
+            local item = {
+                name = team.name,
+                slug = team.slug,
+                organization = git_info.owner,
+                -- JSON null is `vim.NIL`, which the format would show as the text "vim.NIL"
+                description = type(team.description) == "string" and team.description or "",
+            }
+            return format.item(config, trigger_char, item)
         end,
     }
 end

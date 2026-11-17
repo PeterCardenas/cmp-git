@@ -15,6 +15,18 @@ local function pull_request_prefix(trigger_char)
     return trigger_char == "!" and "!" or "#"
 end
 
+---A GitHub user is `@login`, and a team is `@org/slug`. GitHub mentions a team by its slug, not by its name, which can
+---have spaces.
+---@param _trigger_char string?
+---@param mention cmp_git.GitHub.Mention|cmp_git.GitHub.Team
+---@return string
+local function github_mention_handle(_trigger_char, mention)
+    if mention.login == nil then
+        return string.format("@%s/%s", mention.organization, mention.slug)
+    end
+    return string.format("@%s", mention.login)
+end
+
 ---The formats of Gitea and Forgejo, which have the same API. Each call gives new tables, so that a change to the
 ---formats of one provider does not change the other.
 local function gitea_formats()
@@ -266,16 +278,17 @@ local M = {
         },
         ---@type cmp_git.FormatConfig<cmp_git.GitHub.Mention>
         mentions = {
-            label = function(_trigger_char, mention)
-                return string.format("@%s", mention.login)
-            end,
-            insertText = function(_trigger_char, mention)
-                return string.format("@%s", mention.login)
-            end,
-            filterText = function(_trigger_char, mention)
-                return string.format("@%s", mention.login)
-            end,
+            label = github_mention_handle,
+            insertText = github_mention_handle,
+            filterText = github_mention_handle,
+            ---@param mention cmp_git.GitHub.Mention|cmp_git.GitHub.Team
             documentation = function(_trigger_char, mention)
+                if mention.login == nil then
+                    return {
+                        kind = "markdown",
+                        value = string.format("# %s\n%s", mention.name, mention.description),
+                    }
+                end
                 return {
                     kind = "markdown",
                     value = string.format("# %s", mention.login),

@@ -243,4 +243,19 @@ T["gitea_and_forgejo_mentions"] = function()
     end
 end
 
+T["github_team_mentions"] = function()
+    local item = format.item(
+        defaults.github.mentions,
+        "@",
+        { name = "Core Team", slug = "core-team", organization = "acme", description = "Maintainers" }
+    )
+
+    eq(fields(item), {
+        label = "@acme/core-team",
+        insertText = "@acme/core-team",
+        filterText = "@acme/core-team",
+        documentation = "# Core Team\nMaintainers",
+    }, "a team is mentioned by its slug")
+end
+
 return T

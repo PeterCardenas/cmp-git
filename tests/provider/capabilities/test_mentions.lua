@@ -393,4 +393,119 @@ T["a_refresh_gets_all_pages"] = function()
     eq(results[2], true, "nil when a page fails")
 end
 
+---A runner whose list commands give `pages[exec][page]` users, or fail for a missing page. `requests` records
+---`exec:page` for each list command.
+---@param pages table<string, table<integer, string[]|false>>
+local function paged_runner(pages)
+    local requests = {}
+    return {
+        build_fallback_list = function(commands, callback, handle_item)
+            local spec = commands[1]
+            table.insert(requests, spec.exec .. ":" .. spec.page)
+            return helpers.fake_job(function()
+                local names = pages[spec.exec][spec.page]
+                if not names then
+                    callback({ items = {}, isIncomplete = false }, false)
+                    return
+                end
+                local items = {}
+                for _, name in ipairs(names) do
+                    table.insert(items, handle_item({ login = name }))
+                end
+                callback({ items = items, isIncomplete = false }, true)
+            end)
+        end,
+    },
+        requests
+end
+
+---An adapter with users and extra mentions, each a command named after it.
+---@param with_extra boolean
+local function extra_adapter(with_extra)
+    local function list_request(exec)
+        return function(_git_info, trigger_char, capability_config, opts)
+            return {
+                commands = { { exec = exec, args = {}, page = opts.page } },
+                handle_item = function(user)
+                    return format.item(capability_config, trigger_char, user)
+                end,
+            }
+        end
+    end
+    return {
+        mentions_request = list_request("users"),
+        mentions_extra_request = function(...)
+            return with_extra and list_request("teams")(...) or nil
+        end,
+    }
+end
+
+---@param adapter table
+---@param runner table
+---@param limit number
+local function complete_with(adapter, runner, limit)
+    local callback, lists = helpers.recorder()
+    local capability_config = mentions_config(limit)
+    local entry = entry_for(capability_config)
+    mention_capability.complete({
+        adapter = adapter,
+        cache = entry,
+        callback = callback,
+        config = capability_config,
+        git_info = git_info,
+        trigger_char = "@",
+        runner = runner,
+    })
+    return lists, entry
+end
+
+---@param list cmp_git.CompletionList
+---@return string
+local function logins(list)
+    return table.concat(
+        vim.tbl_map(function(item)
+            return item.data.login
+        end, list.items),
+        ","
+    )
+end
+
+T["extra_mentions_follow_the_users"] = function()
+    local runner, requests = paged_runner({ users = { { "ada" } }, teams = { { "core" } } })
+    local lists, entry = complete_with(extra_adapter(true), runner, 100)
+
+    eq(table.concat(requests, ","), "users:1,teams:1", "the extra mentions start after the last page of users")
+    eq(#lists, 2, "a partial list after the users, then the final list")
+    eq(lists[1].isIncomplete, true, "the users before the extra mentions are partial")
+    eq(logins(lists[2]), "ada,core", "the final list has the users and the extra mentions")
+    eq(#helpers.not_nil(entry:get()), 2, "the cache has both")
+end
+
+T["a_failed_extra_request_keeps_and_caches_the_users"] = function()
+    local runner = paged_runner({ users = { { "ada" } }, teams = {} })
+    local lists, entry = complete_with(extra_adapter(true), runner, 100)
+
+    eq(lists[#lists].isIncomplete, false, "the list is final")
+    eq(logins(lists[#lists]), "ada", "the users stay")
+    eq(#helpers.not_nil(entry:get(), "a failed extra request still caches the users"), 1)
+end
+
+T["no_extra_request_without_extra_mentions_or_room"] = function()
+    local runner, requests = paged_runner({ users = { { "ada" } }, teams = { { "core" } } })
+    local lists = complete_with(extra_adapter(false), runner, 100)
+    eq(table.concat(requests, ","), "users:1", "an adapter without extra mentions asks once")
+    eq(#lists, 1, "one final list")
+
+    runner, requests = paged_runner({ users = { { "ada" } }, teams = { { "core" } } })
+    complete_with(extra_adapter(true), runner, 1)
+    eq(table.concat(requests, ","), "users:1", "the users that reach the limit leave no room for extra mentions")
+end
+
+T["a_failed_users_page_is_not_cached_and_skips_the_extra_mentions"] = function()
+    local runner, requests = paged_runner({ users = {}, teams = { { "core" } } })
+    local _, entry = complete_with(extra_adapter(true), runner, 100)
+    eq(table.concat(requests, ","), "users:1", "no extra request after a failure")
+    eq(entry:get(), nil, "a failure is not cached")
+end
+
 return T

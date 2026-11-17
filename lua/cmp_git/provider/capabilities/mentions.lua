@@ -90,25 +90,32 @@ local function start_fetch(args, fetch, on_page, on_done)
         return
     end
 
-    local function fetch_page(page, context)
-        local request = args.adapter.mentions_request(args.git_info, args.trigger_char, args.config, {
-            context = context,
-            page = page,
-            page_size = page_size,
-        })
+    ---@param build_request fun(git_info: cmp_git.GitInfo, trigger_char: string, config: table, opts: table): table?
+    ---@param page integer
+    ---@param context any
+    ---@param on_last fun(success: boolean) Runs after the last page or a failure.
+    ---@param request? table The request of `page`, when the caller already built it.
+    local function fetch_page(build_request, page, context, on_last, request)
+        request = request
+            or build_request(args.git_info, args.trigger_char, args.config, {
+                context = context,
+                page = page,
+                page_size = page_size,
+            })
+        ---@cast request -nil
 
         local job = runner.build_fallback_list(request.commands, function(list, success)
             if fetch.cancelled then
                 return
             end
             if not success then
-                finish(false)
+                on_last(false)
                 return
             end
 
             local items = vim.list_extend(vim.list_extend({}, fetch.items), issues.raw_items(list.items))
             local has_more
-            if args.adapter.mentions_has_more then
+            if build_request == args.adapter.mentions_request and args.adapter.mentions_has_more then
                 has_more = args.adapter.mentions_has_more(list, items, args.config, context)
             else
                 -- A page that is not full is the last one. Asking for the next page would wait for an empty one.
@@ -123,26 +130,52 @@ local function start_fetch(args, fetch, on_page, on_done)
             fetch.items = items
 
             if not has_more then
-                finish(true)
+                on_last(true)
                 return
             end
 
             on_page()
-            fetch_page(page + 1, context)
+            fetch_page(build_request, page + 1, context, on_last)
         end, request.handle_item, request.handle_parsed)
 
         if not job then
-            finish(false)
+            on_last(false)
             return
         end
         fetch.active = job
         job:start()
     end
 
+    ---Get the users, then the extra mentions of the adapter, such as the teams of a GitHub organization.
+    local function fetch_mentions(context)
+        fetch_page(args.adapter.mentions_request, 1, context, function(success)
+            local build_extra = args.adapter.mentions_extra_request
+            local extra = success
+                and #fetch.items < limit
+                and build_extra
+                and build_extra(args.git_info, args.trigger_char, args.config, {
+                    context = context,
+                    page = 1,
+                    page_size = page_size,
+                })
+            if not extra then
+                finish(success)
+                return
+            end
+
+            on_page()
+            -- The extra mentions are optional: a failure, for example for a repository of a user and not of an
+            -- organization, keeps the users and still caches them
+            fetch_page(build_extra, 1, context, function()
+                finish(true)
+            end, extra)
+        end)
+    end
+
     local preflight = args.adapter.mentions_preflight_request
         and args.adapter.mentions_preflight_request(args.git_info, args.trigger_char, args.config)
     if not preflight then
-        fetch_page(1, nil)
+        fetch_mentions(nil)
         return
     end
 
@@ -156,11 +189,11 @@ local function start_fetch(args, fetch, on_page, on_done)
         if preflight.handle_result then
             context = preflight.handle_result(result, success)
         end
-        fetch_page(1, context)
+        fetch_mentions(context)
     end)
 
     if not job then
-        fetch_page(1, nil)
+        fetch_mentions(nil)
         return
     end
     fetch.active = job

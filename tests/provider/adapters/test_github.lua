@@ -338,4 +338,21 @@ T["handle_item_fills_null_text"] = function()
     end
 end
 
+T["mentions_extra_request_lists_the_teams_of_collaborators"] = function()
+    local collaborators = { context = { member_type = "collaborators" }, page = 2, page_size = 50 }
+    eq(adapter.mentions_extra_request(github, "@", github_config().mentions, collaborators), nil, "teams are opt-in")
+
+    local teams_config = github_config({ mentions = { fetch_teams = true } }).mentions
+    local contributors = { context = { member_type = "contributors" }, page = 1, page_size = 50 }
+    eq(adapter.mentions_extra_request(github, "@", teams_config, contributors), nil, "contributors cannot list teams")
+
+    local request = helpers.not_nil(adapter.mentions_extra_request(github, "@", teams_config, collaborators))
+    eq(request.commands[1].args, { "api", "orgs/owner/teams?per_page=50&page=2", "--hostname", "github.com" })
+    eq(curl_url(request.commands[2]), "https://api.github.com/orgs/owner/teams?per_page=50&page=2")
+
+    local item = request.handle_item({ name = "Core Team", slug = "core-team", description = vim.NIL })
+    eq(item.insertText, "@owner/core-team", "the team handle uses the owner and the slug")
+    eq(item.data.description, "", "a null description is empty")
+end
+
 return T

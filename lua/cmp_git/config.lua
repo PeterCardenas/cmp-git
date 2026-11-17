@@ -159,11 +159,16 @@ local defaults = {
             sort_by = sort.github.issues,
             format = format.github.issues,
         },
+        ---@class cmp_git.Config.GitHub.Mentions
         mentions = {
             -- Use math.huge to fetch until there are no more results
             limit = 100,
             sort_by = sort.github.mentions,
             format = format.github.mentions,
+            ---Also mention the teams of the organization of the repository, as `@org/slug`. Only a collaborator can
+            ---list them.
+            ---@type boolean
+            fetch_teams = false,
         },
         ---@class cmp_git.Config.GitHub.PullRequest
         pull_requests = {
