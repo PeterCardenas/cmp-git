@@ -166,6 +166,9 @@ local defaults = {
             limit = 100,
             sort_by = sort.github.mentions,
             format = format.github.mentions,
+            ---Fetch the mentions of the remote when cmp-git starts, so that the first `@` has all of them
+            ---@type boolean
+            prefetch = false,
             ---Also mention the teams of the organization of the repository, as `@org/slug`. Only a collaborator can
             ---list them.
             ---@type boolean

@@ -1130,4 +1130,28 @@ T["complete_passes_the_hosts_of_all_providers_to_discovery"] = function()
     expect_one_empty_list(lists, "no source handles a request without a repository")
 end
 
+T["prefetch_fills_the_mentions_cache_of_the_remote"] = function()
+    local prefetched = {}
+    helpers.stub(repository, "discover", function(_, opts)
+        opts.on_complete({ host = "github.com", owner = "owner", repo = "repo" })
+    end)
+    local GitHub = require("cmp_git.sources.github")
+    helpers.stub(GitHub, "complete_mentions", function(_, _callback, git_info, trigger_char)
+        table.insert(prefetched, git_info.owner .. trigger_char)
+        return true
+    end)
+
+    Core.new({})
+    eq(prefetched, {}, "prefetch is opt-in")
+
+    Core.new({ github = { mentions = { prefetch = true } } })
+    eq(prefetched, { "owner@" }, "prefetch asks for the mentions of the remote")
+
+    helpers.stub(repository, "discover", function(_, opts)
+        opts.on_complete({ host = "gitlab.com", owner = "owner", repo = "repo" })
+    end)
+    Core.new({ github = { mentions = { prefetch = true } } })
+    eq(#prefetched, 1, "a remote on another host is not prefetched")
+end
+
 return T

@@ -324,6 +324,8 @@ function Core.new(overrides)
         self.keyword_pattern = [[\%(]] .. table.concat(patterns, [[\|]]) .. [[\)]]
     end
 
+    self:prefetch()
+
     return self
 end
 
@@ -638,6 +640,21 @@ function Core:resolve(item, callback, bufnr)
 
     self:discover_remote(bufnr, function(git_info)
         trigger_action.resolve(self, item, callback, git_info)
+    end)
+end
+
+---Fill the mentions cache of the remote of the buffer, so that the first `@` already has all pages.
+---@param bufnr? integer The buffer, by default the current one.
+function Core:prefetch(bufnr)
+    if not self.config.github.mentions.prefetch then
+        return
+    end
+
+    bufnr = bufnr or vim.api.nvim_get_current_buf()
+    self:discover_remote(bufnr, function(git_info)
+        if vim.tbl_contains(self.config.github.hosts, git_info.host) then
+            self.sources.github:complete_mentions(function() end, git_info, "@", bufnr)
+        end
     end)
 end
 
