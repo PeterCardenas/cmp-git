@@ -26,6 +26,16 @@ local M = {}
 ---@field organization string
 ---@field description string
 
+---A user from the users API.
+---Reference: https://docs.github.com/en/rest/users/users#get-a-user
+---@class cmp_git.GitHub.User
+---@field login string
+---@field name string|vim.NIL|nil
+---@field company string|vim.NIL|nil
+---@field email string|vim.NIL|nil
+---@field bio string|vim.NIL|nil
+---@field location string|vim.NIL|nil
+
 local function github_url(git_host, path)
     if git_host == "github.com" then
         return string.format("https://api.github.com/%s", path)
@@ -291,6 +301,18 @@ function M.mentions_extra_request(git_info, trigger_char, config, opts)
             }
             return format.item(config, trigger_char, item)
         end,
+    }
+end
+
+---@param git_info cmp_git.GitInfo
+---@param login string
+function M.user_request(git_info, login)
+    local path = string.format("users/%s", login)
+    return {
+        commands = {
+            { exec = "gh", args = { "api", path, "--hostname", git_info.host }, env = env() },
+            curl_command(github_url(git_info.host, path)),
+        },
     }
 end
 

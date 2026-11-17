@@ -404,4 +404,87 @@ T["source_new_uses_normalized_config"] = function()
     )
 end
 
+---A source with a legacy mentions action that has `resolve`, and the lists of the request callback.
+local function resolving_source(resolve)
+    helpers.stub(repository, "discover", function(_, opts)
+        opts.on_complete({ host = "github.com", owner = "owner", repo = "repo" })
+    end)
+    local raw = { login = "octocat" }
+    local source = Source.new({
+        trigger_actions = {
+            {
+                debug_name = "mentions_with_profiles",
+                trigger_character = "@",
+                action = function(_sources, _trigger_char, callback)
+                    callback({ items = { { label = "@octocat", data = raw } }, isIncomplete = false })
+                    return true
+                end,
+                resolve = resolve,
+            },
+        },
+    })
+    return source, raw
+end
+
+T["legacy_trigger_action_resolve"] = function()
+    local resolved_with = nil
+    local source, raw = resolving_source(function(sources, item, callback, git_info)
+        resolved_with = { sources = sources, git_info = git_info }
+        callback(vim.tbl_extend("force", item, { documentation = "profile" }))
+    end)
+    local callback, lists = helpers.recorder()
+    source:_run_trigger_actions("@", callback, { context = {} }, {})
+
+    local item = lists[1].items[1]
+    eq(item.data.trigger_name, "mentions_with_profiles", "the item names its action")
+    eq(item.data.login, "octocat", "the item keeps its data")
+    eq(raw.trigger_name, nil, "the tag is on a copy, so the cached item does not change")
+
+    local resolved = nil
+    source:resolve(item, function(result)
+        resolved = result
+    end)
+    eq(helpers.not_nil(resolved).documentation, "profile", "resolve runs the action of the item")
+    local received = helpers.not_nil(resolved_with)
+    ok(received.sources == source.sources, "resolve gets the sources")
+    eq(received.git_info.owner, "owner", "resolve gets the remote")
+end
+
+T["resolve_without_an_action_gives_the_item_back"] = function()
+    local source = resolving_source(nil)
+    local callback, lists = helpers.recorder()
+    source:_run_trigger_actions("@", callback, { context = {} }, {})
+    eq(lists[1].items[1].data.trigger_name, nil, "an action without resolve does not tag its items")
+
+    local item = { label = "x", data = { trigger_name = "unknown" } }
+    local resolved = nil
+    source:resolve(item, function(result)
+        resolved = result
+    end)
+    ok(resolved == item, "an item of no resolving action stays the same")
+end
+
+T["github_mentions_resolve_the_profile"] = function()
+    local source = github_source()
+    local resolved_item = nil
+    source.sources.github.resolve_mention = function(_, item, callback, git_info)
+        resolved_item = item
+        callback(vim.tbl_extend("force", item, { documentation = git_info.owner }))
+    end
+    local callback, lists = helpers.recorder()
+    source:complete(cmp_params("see @", 1), callback)
+    helpers.wait_for(function()
+        return #lists > 0
+    end, "mentions answer")
+
+    local item = lists[1].items[1]
+    eq(item.data.trigger_name, "github_mentions", "the built-in mentions action tags its items")
+    local resolved = nil
+    source:resolve(item, function(result)
+        resolved = result
+    end)
+    ok(resolved_item == item, "the GitHub source resolves the item")
+    eq(helpers.not_nil(resolved).documentation, "owner")
+end
+
 return T

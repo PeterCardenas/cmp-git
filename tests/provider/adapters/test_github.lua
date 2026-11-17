@@ -355,4 +355,10 @@ T["mentions_extra_request_lists_the_teams_of_collaborators"] = function()
     eq(item.data.description, "", "a null description is empty")
 end
 
+T["user_request"] = function()
+    local request = adapter.user_request(enterprise, "octocat")
+    eq(request.commands[1].args, { "api", "users/octocat", "--hostname", "github.example.com" })
+    eq(curl_url(request.commands[2]), "https://github.example.com/api/v3/users/octocat")
+end
+
 return T

@@ -525,4 +525,54 @@ T["stale_mentions_refresh_all_pages"] = function()
     eq(entry.fetch, nil, "the refresh does not block the requests")
 end
 
+---Resolve an item with the given `gh api users/...` result.
+---@param result string
+---@param success boolean
+local function resolve_with(result, success, item)
+    local source = GitHub.new(config.normalize({}).github)
+    local commands = nil
+    helpers.stub(command, "build_fallback", function(specs, callback)
+        commands = specs
+        return helpers.fake_job(function()
+            callback(result, success)
+        end)
+    end)
+    local resolved = nil
+    source:resolve_mention(item, function(value)
+        resolved = value
+    end, git_info)
+    return helpers.not_nil(resolved), commands
+end
+
+T["resolve_mention_documents_the_profile"] = function()
+    local item =
+        { label = "@octocat", documentation = { kind = "markdown", value = "# octocat" }, data = { login = "octocat" } }
+    local user = vim.json.encode({
+        login = "octocat",
+        name = "The Octocat",
+        location = "San Francisco",
+        email = vim.NIL,
+        company = "",
+        bio = "A cat",
+    })
+    local resolved, commands = resolve_with(user, true, item)
+
+    eq(helpers.not_nil(commands)[1].args[2], "users/octocat", "the users API of the login")
+    eq(resolved.documentation, {
+        kind = "markdown",
+        value = "# The Octocat (octocat)\nLocation: San Francisco\nBio: A cat",
+    }, "null and empty fields are left out")
+    eq(item.documentation.value, "# octocat", "the item of the list does not change")
+end
+
+T["resolve_mention_keeps_the_item_on_failure"] = function()
+    local item = { label = "@octocat", data = { login = "octocat" } }
+    ok(resolve_with("", false, item) == item, "a failed request")
+    ok(resolve_with("not json", true, item) == item, "a result that is not JSON")
+
+    local team = { label = "@owner/core", data = { name = "Core", slug = "core", organization = "owner" } }
+    local resolved, commands = resolve_with("{}", true, team)
+    ok(resolved == team and commands == nil, "a team has its details already and starts no command")
+end
+
 return T

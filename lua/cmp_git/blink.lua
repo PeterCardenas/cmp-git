@@ -74,6 +74,13 @@ function Blink:execute(_ctx, item, callback, default_implementation)
     end)
 end
 
+---blink.cmp calls this before it shows the documentation of the selected item.
+---@param item cmp_git.BlinkCompletionItem
+---@param callback fun(item: cmp_git.BlinkCompletionItem)
+function Blink:resolve(item, callback)
+    self.core:resolve(item, callback)
+end
+
 function Blink:get_completions(ctx, callback)
     local cancelled = false
     local responded = false

@@ -88,6 +88,13 @@ local builtin_trigger_actions = {
     forgejo_issues_and_change_requests = hosted_action("forgejo", "complete_issues_and_change_requests"),
 }
 
+-- Built-in actions that add details to an item when the completion engine resolves it
+local builtin_resolvers = {
+    github_mentions = function(core, item, callback, git_info)
+        core.sources.github:resolve_mention(item, callback, git_info)
+    end,
+}
+
 -- Built-in actions that read only the local repository. They need no remote, and they always handle the request.
 local LOCAL_ACTIONS = {
     git_commits = true,
@@ -139,6 +146,7 @@ end
 ---@field needs_remote boolean The action reads `git_info`.
 ---@field always_handles boolean The action never declines the request, so the actions after it never run.
 ---@field action fun(core: table, callback: fun(list: cmp_git.CompletionList), context: table, git_info: cmp_git.GitInfo, trigger_char: string?): string, table?
+---@field resolve? fun(core: table, item: cmp_git.CompletionItem, callback: fun(item: cmp_git.CompletionItem), git_info: cmp_git.GitInfo) Adds details to an item of the action.
 
 ---@param configured_action table
 ---@param regexes table<string, any> The compiled patterns, by pattern.
@@ -155,6 +163,9 @@ local function normalize_trigger_action(configured_action, regexes)
                 trigger_character = configured_action.trigger_character,
                 needs_remote = true,
                 always_handles = false,
+                resolve = configured_action.resolve and function(core, item, callback, git_info)
+                    configured_action.resolve(core.sources, item, callback, git_info)
+                end,
                 action = function(core, _callback, context, git_info, trigger_char)
                     return route_status(
                         configured_action.action(
@@ -202,6 +213,7 @@ local function normalize_trigger_action(configured_action, regexes)
             available = builtin_trigger_availability[action_name],
             needs_remote = action ~= nil and not LOCAL_ACTIONS[action_name],
             always_handles = LOCAL_ACTIONS[action_name] == true,
+            resolve = builtin_resolvers[action_name],
             action = function(core, callback, context, git_info, trigger_char)
                 if not action then
                     return ROUTE_UNAVAILABLE
@@ -455,17 +467,51 @@ function Core:_route(context)
     return routes
 end
 
+---Copy the items of a list, and name the action that made them in the copy of `data`, so that `resolve` finds the
+---action. The copies keep the cached items unchanged.
+---@param callback fun(list: cmp_git.CompletionList)
+---@param trigger_name string
+---@return fun(list: cmp_git.CompletionList)
+local function tag_items(callback, trigger_name)
+    return function(list)
+        local items = {}
+        for index, item in ipairs(list.items or {}) do
+            local data = {}
+            if type(item.data) == "table" then
+                for key, value in pairs(item.data) do
+                    data[key] = value
+                end
+            end
+            data.trigger_name = trigger_name
+
+            local copy = {}
+            for key, value in pairs(item) do
+                copy[key] = value
+            end
+            copy.data = data
+            items[index] = copy
+        end
+        callback({ items = items, isIncomplete = list.isIncomplete })
+    end
+end
+
 ---@param routes? cmp_git.Route[] The routes of the context, when the caller has them.
 function Core:_run_trigger_actions(trigger_character, callback, context, git_info, routes)
     context = context or {}
     context.trigger_character = trigger_character
-    context.original_callback = callback
     local wrapped_callback = self:_wrap_callback(context, callback)
 
     for _, route in ipairs(routes or self:_route(context)) do
+        local trigger_action = route.trigger_action
+        local action_callback = wrapped_callback
+        context.original_callback = callback
+        if trigger_action.resolve then
+            action_callback = tag_items(wrapped_callback, trigger_action.debug_name)
+            context.original_callback = tag_items(callback, trigger_action.debug_name)
+        end
         -- Set before the action runs, because a cache hit calls the callback synchronously
         context.edit_start = route.edit_start
-        local result, job = route.trigger_action.action(self, wrapped_callback, context, git_info, trigger_character)
+        local result, job = trigger_action.action(self, action_callback, context, git_info, trigger_character)
         if result == ROUTE_HANDLED then
             return job
         end
@@ -570,6 +616,29 @@ function Core:complete(context, callback)
     end, context.bufnr)
 
     return controller
+end
+
+---Add the details of the action that made the item, such as the profile of a mentioned user.
+---@param item cmp_git.CompletionItem
+---@param callback fun(item: cmp_git.CompletionItem)
+---@param bufnr? integer The buffer, by default the current one.
+function Core:resolve(item, callback, bufnr)
+    local trigger_name = type(item.data) == "table" and item.data.trigger_name or nil
+    local trigger_action = nil
+    for _, candidate in ipairs(self.trigger_actions) do
+        if candidate.resolve and candidate.debug_name == trigger_name then
+            trigger_action = candidate
+            break
+        end
+    end
+    if not trigger_action then
+        callback(item)
+        return
+    end
+
+    self:discover_remote(bufnr, function(git_info)
+        trigger_action.resolve(self, item, callback, git_info)
+    end)
 end
 
 ---Whether the completion engine must open the menu again after the insert of the item. A prefix word item has this

@@ -5,6 +5,7 @@ local sort = require("cmp_git.sort")
 ---@field debug_name string
 ---@field trigger_character string
 ---@field action fun(sources: cmp_git.Sources, trigger_char: string, callback: fun(list: cmp_git.CompletionList), params: cmp_git.CmpCompletionParams, git_info: cmp_git.GitInfo): boolean
+---@field resolve? fun(sources: cmp_git.Sources, item: cmp_git.CompletionItem, callback: fun(item: cmp_git.CompletionItem), git_info: cmp_git.GitInfo) Adds details to an item of `action` when the completion engine resolves it.
 
 ---@class cmp_git.Config.NamedTriggerActions
 ---@field trigger_character string

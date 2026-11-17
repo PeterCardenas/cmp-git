@@ -3,6 +3,7 @@ local Blink = require("cmp_git.blink")
 local repository = require("cmp_git.repository")
 
 local eq = helpers.eq
+local ok = helpers.ok
 
 local T = helpers.new_set()
 
@@ -249,6 +250,22 @@ T["blink_reopen_request_gives_the_commit_items"] = function()
     eq(item.label, "feat: add parser", "the commit items")
     eq(item.textEdit.range.start.character, 7, "the edit starts after the prefix and its space")
     eq(item.textEdit.newText, "feat: add parser", "the insert is the title")
+end
+
+T["blink_resolve_uses_the_core"] = function()
+    local blink = Blink.new({})
+    local seen = nil
+    helpers.stub(blink.core, "resolve", function(_, item, callback)
+        seen = item
+        callback(vim.tbl_extend("force", item, { documentation = "resolved" }))
+    end)
+    local item = { label = "@octocat" }
+    local resolved = nil
+    blink:resolve(item, function(result)
+        resolved = result
+    end)
+    ok(seen == item, "blink.cmp items go to the core")
+    eq(helpers.not_nil(resolved).documentation, "resolved")
 end
 
 return T

@@ -294,6 +294,57 @@ function GitHub:complete_mentions(callback, git_info, trigger_char, bufnr)
     return true, job
 end
 
+---The profile of the user in the documentation of a mention item. A team item has its details already.
+---@param item cmp_git.CompletionItem
+---@param callback fun(item: cmp_git.CompletionItem)
+---@param git_info cmp_git.GitInfo
+function GitHub:resolve_mention(item, callback, git_info)
+    local login = type(item.data) == "table" and item.data.login or nil
+    if type(login) ~= "string" or not self:is_valid_host(git_info) then
+        callback(item)
+        return
+    end
+
+    local job = command.build_fallback(adapter.user_request(git_info, login).commands, function(result, success)
+        local ok, user = pcall(vim.json.decode, result)
+        if not success or not ok or type(user) ~= "table" then
+            callback(item)
+            return
+        end
+        ---@cast user cmp_git.GitHub.User
+
+        ---@param value any
+        ---@return string?
+        local function field(value)
+            return type(value) == "string" and value ~= "" and value or nil
+        end
+
+        local lines = {}
+        local name = field(user.name)
+        table.insert(lines, name and string.format("# %s (%s)", name, login) or string.format("# %s", login))
+        for _, entry in ipairs({
+            { "Location", user.location },
+            { "Email", user.email },
+            { "Company", user.company },
+            { "Bio", user.bio },
+        }) do
+            local value = field(entry[2])
+            if value then
+                table.insert(lines, string.format("%s: %s", entry[1], value))
+            end
+        end
+
+        local resolved = vim.tbl_extend("force", {}, item)
+        resolved.documentation = { kind = "markdown", value = table.concat(lines, "\n") }
+        callback(resolved)
+    end)
+    if not job then
+        callback(item)
+        return
+    end
+    job:start()
+end
+
 function GitHub:get_issues(callback, git_info, trigger_char)
     return self:complete_issues(callback, git_info, trigger_char)
 end

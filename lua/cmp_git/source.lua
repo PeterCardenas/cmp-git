@@ -107,6 +107,13 @@ function Source:execute(completion_item, callback)
     end)
 end
 
+---nvim-cmp calls this before it shows the documentation of the selected item.
+---@param completion_item cmp_git.CompletionItem
+---@param callback fun(item: cmp_git.CompletionItem)
+function Source:resolve(completion_item, callback)
+    self.core:resolve(completion_item, callback)
+end
+
 ---nvim-cmp reads the text edit ranges as UTF-16 unless the source names another encoding. cmp-git finds the edit
 ---start in bytes.
 ---@return string
